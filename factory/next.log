@@ -1,0 +1,33 @@
+
+> drift-fast-fashion@1.0.0 dev
+> next dev -p 3001
+
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3001
+
+ ✓ Starting...
+ ✓ Ready in 1864ms
+ ○ Compiling / ...
+ ✓ Compiled / in 3.3s (505 modules)
+ GET / 200 in 3553ms
+ ✓ Compiled /catalog in 438ms (507 modules)
+ GET /catalog 200 in 650ms
+ ✓ Compiled /product/[id] in 245ms (501 modules)
+ GET /product/p01 200 in 633ms
+ ✓ Compiled /cart in 196ms (507 modules)
+ GET /cart 200 in 274ms
+ ✓ Compiled /admin in 374ms (513 modules)
+ GET /admin 200 in 458ms
+ ✓ Compiled /api/checkout in 277ms (293 modules)
+[DRIFT ORDER] DRIFT-LRGHEK-MUXQ9BEQ 9999999999 1299
+ POST /api/checkout 200 in 361ms
+ GET / 200 in 628ms
+ GET /api/checkout 200 in 112ms
+ GET /api/checkout 200 in 30ms
+ ○ Compiling /checkout ...
+ ✓ Compiled /checkout in 1782ms (563 modules)
+ ✓ Compiled in 480ms (266 modules)
+[DRIFT ORDER] DRIFT-ZD70TZ-MUXYH3Z0 56758653412 1598
+ POST /api/checkout 200 in 65ms
+ GET /catalog 200 in 315ms
+ ✓ Compiled in 218ms (266 modules)

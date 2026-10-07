@@ -1,0 +1,367 @@
+package ari:runtime
+
+// =============================================================================
+// ARI Component Model Interface
+// This defines the contract between the host runtime and guest agent components
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// Core Types
+// -----------------------------------------------------------------------------
+
+// Result type for all operations
+type result<T> = result<T, error>
+
+// Error type
+type error = variant {
+    // Capability errors
+    capability-not-found: string,
+    capability-denied: string,
+    capability-timeout: string,
+    // Tool errors
+    tool-not-found: string,
+    tool-execution-failed: string,
+    tool-invalid-args: string,
+    // Governance errors
+    governance-kill-switch: string,
+    governance-dry-run: string,
+    governance-budget-exceeded: string,
+    governance-approval-required: string,
+    // Resource errors
+    resource-limit-exceeded: string,
+    memory-exhausted: string,
+    execution-timeout: string,
+    // Validation errors
+    schema-validation-failed: string,
+    decision-invalid: string,
+    // Internal errors
+    internal: string,
+    // Cryptographic errors
+    signature-invalid: string,
+    key-not-found: string,
+}
+
+// Capability identifier
+type capability-id = string
+
+// Tool identifier
+type tool-id = string
+
+// Invocation ID for tracing
+type invocation-id = string
+
+// Timestamp (ISO 8601)
+type timestamp = string
+
+// JSON value for flexible data
+type json = variant {
+    null: (),
+    bool: bool,
+    u64: u64,
+    s64: s64,
+    f64: f64,
+    string: string,
+    array: list<json>,
+    object: list<tuple<string, json>>,
+}
+
+// -----------------------------------------------------------------------------
+// Capability System
+// -----------------------------------------------------------------------------
+
+// Capability granted to an agent
+type capability = record {
+    id: capability-id,
+    name: string,
+    description: string,
+    tools: list<tool>,
+    governance: governance-config,
+}
+
+// Tool available within a capability
+type tool = record {
+    id: tool-id,
+    name: string,
+    description: string,
+    input-schema: json,
+    output-schema: json,
+}
+
+// Governance configuration for a capability
+type governance-config = record {
+    max-per-day: option<u32>,
+    max-cost-usd: option<f64>,
+    requires-approval: bool,
+    template-required: bool,
+    allowed-tools: list<tool-id>,
+}
+
+// Capability request from guest
+type capability-request = record {
+    capability: capability-id,
+    tool: tool-id,
+    args: json,
+    reason: string,
+    trace-id: invocation-id,
+}
+
+// Capability response to guest
+type capability-response = record {
+    success: bool,
+    result: option<json>,
+    error: option<string>,
+    execution-time-ms: u64,
+    cost-usd: f64,
+    verification-status: verification-status,
+}
+
+// Verification status
+type verification-status = variant {
+    pending: (),
+    verified: verification-result,
+    failed: string,
+}
+
+// Verification result
+type verification-result = record {
+    outcome: verification-outcome,
+    confidence: f64,
+    insight: string,
+    verified-at: timestamp,
+}
+
+// Verification outcome
+type verification-outcome = variant {
+    success: (),
+    partial: (),
+    failure: (),
+}
+
+// -----------------------------------------------------------------------------
+// Agent Execution
+// -----------------------------------------------------------------------------
+
+// Agent input context provided by host
+type agent-input = record {
+    invocation-id: invocation-id,
+    agent-id: string,
+    org-id: string,
+    context: json,
+    capabilities: list<capability>,
+    limits: resource-limits,
+    governance: governance-state,
+    trace-parent: option<string>,
+}
+
+// Resource limits
+type resource-limits = record {
+    max-execution-time-ms: u64,
+    max-memory-mb: u32,
+    max-tool-calls: u32,
+    max-cost-usd: f64,
+}
+
+// Governance state
+type governance-state = record {
+    kill-switch: bool,
+    dry-run: bool,
+    weekly-spend-cap-usd: f64,
+    weekly-spend-used-usd: f64,
+}
+
+// Agent decision output (validated against decision_schema)
+type agent-decision = record {
+    action: string,
+    reasoning: string,
+    tool-calls: list<tool-call>,
+    confidence: f64,
+    review-after-days: u32,
+}
+
+// Tool call requested by agent
+type tool-call = record {
+    capability: capability-id,
+    tool: tool-id,
+    args: json,
+    reason: string,
+}
+
+// Agent execution result
+type agent-result = record {
+    invocation-id: invocation-id,
+    decision: agent-decision,
+    executions: list<capability-response>,
+    verification: list<verification-result>,
+    total-cost-usd: f64,
+    total-time-ms: u64,
+    completed-at: timestamp,
+}
+
+// -----------------------------------------------------------------------------
+// Host Functions (imported by guest)
+// -----------------------------------------------------------------------------
+
+// Execute a capability (tool call)
+type execute-capability = func(capability-request) -> result<capability-response>
+
+// Get current timestamp
+type now = func() -> timestamp
+
+// Log structured event
+type log = func(level: log-level, message: string, fields: json) -> ()
+
+// Log level
+type log-level = variant {
+    trace: (),
+    debug: (),
+    info: (),
+    warn: (),
+    error: (),
+}
+
+// Emit metric
+type metric = func(name: string, value: f64, tags: list<tuple<string, string>>) -> ()
+
+// Store key-value in agent's persistent memory
+type memory-set = func(key: string, value: json) -> result<()>
+
+// Retrieve from agent's persistent memory
+type memory-get = func(key: string) -> result<option<json>>
+
+// List keys in agent's memory
+type memory-list = func(prefix: string) -> result<list<string>>
+
+// Delete from agent's memory
+type memory-delete = func(key: string) -> result<()>
+
+// Request founder approval for an action
+type request-approval = func(
+    action: string,
+    summary: string,
+    recommendation: string,
+    estimated-cost-usd: f64,
+    tool-calls: list<tool-call>
+) -> result<approval-response>
+
+// Approval response
+type approval-response = variant {
+    approved: approval-details,
+    denied: string,
+    pending: approval-id,
+}
+
+// Approval details
+type approval-details = record {
+    approval-id: string,
+    approved-by: string,
+    approved-at: timestamp,
+    modifications: option<json>,
+}
+
+// Approval ID
+type approval-id = string
+
+// Verify an action outcome
+type verify-outcome = func(
+    capability: capability-id,
+    expected: string,
+    actual: json,
+    trace-id: invocation-id
+) -> result<verification-result>
+
+// Get agent identity (for signing)
+type get-identity = func() -> result<agent-identity>
+
+// Agent identity
+type agent-identity = record {
+    agent-id: string,
+    org-id: string,
+    public-key: string,
+    certificate: string,
+}
+
+// Sign data with agent's key
+type sign = func(data: list<u8>) -> result<list<u8>>
+
+// -----------------------------------------------------------------------------
+// Guest Exports (implemented by agent component)
+// -----------------------------------------------------------------------------
+
+// Main entrypoint - execute one agent invocation
+type run = func(input: agent-input) -> result<agent-result>
+
+// Initialize agent (called once on component load)
+type initialize = func(config: json) -> result<()>
+
+// Health check
+type health = func() -> result<health-status>
+
+// Health status
+type health-status = record {
+    healthy: bool,
+    version: string,
+    uptime-ms: u64,
+    memory-mb: u32,
+}
+
+// Get agent metadata (spec)
+type metadata = func() -> result<agent-metadata>
+
+// Agent metadata
+type agent-metadata = record {
+    name: string,
+    version: string,
+    spec-version: string,
+    capabilities: list<capability-id>,
+    authority: authority-level,
+    schedule: string,
+}
+
+// Authority level
+type authority-level = variant {
+    L1: (),
+    L2: (),
+    L3: (),
+    L4: (),
+    L5: (),
+}
+
+// -----------------------------------------------------------------------------
+// World Interface
+// =============================================================================
+
+world agent {
+    import execute-capability
+    import now
+    import log
+    import metric
+    import memory-set
+    import memory-get
+    import memory-list
+    import memory-delete
+    import request-approval
+    import verify-outcome
+    import get-identity
+    import sign
+
+    export run
+    export initialize
+    export health
+    export metadata
+}
+
+world capability-provider {
+    import execute-capability
+    import now
+    import log
+    import metric
+    export execute
+    export schema
+    export health
+}
+
+type execute = func(request: capability-request) -> result<capability-response>
+
+type schema = func() -> result<capability>
+
+type health = func() -> result<health-status>

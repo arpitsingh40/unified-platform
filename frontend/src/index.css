@@ -1,0 +1,181 @@
+@import url('https://fonts.googleapis.com/css2?family=Gloock&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 36 33% 98%;
+    --surface: 0 0% 100%;
+    --surface-2: 36 20% 95%;
+    --hairline: 30 12% 88%;
+    --text: 222 22% 12%;
+    --muted: 222 10% 42%;
+    --accent: 186 55% 38%;
+    --accent-wash: 186 42% 92%;
+    --destructive: 0 72% 52%;
+    --radius: 0.75rem;
+
+    /* 3D shadow depths */
+    --shadow-elevation-1: 0 1px 2px rgba(0,0,0,0.04), 0 2px 8px rgba(0,0,0,0.04);
+    --shadow-elevation-2: 0 1px 3px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06);
+    --shadow-elevation-3: 0 4px 12px rgba(0,0,0,0.06), 0 20px 40px rgba(0,0,0,0.08);
+    --shadow-elevation-4: 0 8px 24px rgba(0,0,0,0.08), 0 32px 60px rgba(0,0,0,0.10);
+  }
+
+  .dark {
+    --background: 222 18% 8%;
+    --surface: 222 15% 12%;
+    --surface-2: 222 12% 17%;
+    --hairline: 222 10% 22%;
+    --text: 210 15% 92%;
+    --muted: 222 8% 56%;
+    --accent: 186 60% 45%;
+    --accent-wash: 186 40% 12%;
+    --destructive: 0 65% 55%;
+    --radius: 0.75rem;
+
+    --shadow-elevation-1: 0 1px 2px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.25);
+    --shadow-elevation-2: 0 1px 3px rgba(0,0,0,0.35), 0 8px 24px rgba(0,0,0,0.3);
+    --shadow-elevation-3: 0 4px 12px rgba(0,0,0,0.4), 0 20px 40px rgba(0,0,0,0.35);
+    --shadow-elevation-4: 0 8px 24px rgba(0,0,0,0.45), 0 32px 60px rgba(0,0,0,0.4);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-hairline;
+    border-color: hsl(var(--hairline));
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-background text-text;
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    letter-spacing: -0.01em;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: hsl(var(--accent) / 0.25);
+  }
+}
+
+/* --- Utility classes --- */
+.font-display {
+  font-family: 'Gloock', serif;
+  letter-spacing: -0.02em;
+}
+.font-mono-plex {
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+/* Elevation system — maps to --shadow-elevation-* tokens */
+.elevation-1 { box-shadow: var(--shadow-elevation-1); }
+.elevation-2 { box-shadow: var(--shadow-elevation-2); }
+.elevation-3 { box-shadow: var(--shadow-elevation-3); }
+.elevation-4 { box-shadow: var(--shadow-elevation-4); }
+
+/* 3D card with perspective for tilt children */
+.perspective-3d {
+  perspective: 1000px;
+  transform-style: preserve-3d;
+}
+.perspective-3d > * {
+  backface-visibility: hidden;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+/* Glass effect */
+.glass {
+  background: hsl(var(--background) / 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.glass-strong {
+  background: hsl(var(--surface) / 0.85);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+/* Paper noise background */
+.paper {
+  position: relative;
+}
+.paper::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.02;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+}
+.dark .paper::before {
+  opacity: 0.04;
+}
+
+/* Soft gradient light behind hero elements */
+.gradient-light {
+  background:
+    radial-gradient(800px 400px at 30% 0%, hsl(var(--accent) / 0.08), transparent 60%),
+    radial-gradient(600px 300px at 70% 100%, hsl(var(--accent) / 0.04), transparent 55%);
+}
+.dark .gradient-light {
+  background:
+    radial-gradient(800px 400px at 30% 0%, hsl(var(--accent) / 0.12), transparent 60%),
+    radial-gradient(600px 300px at 70% 100%, hsl(var(--accent) / 0.06), transparent 55%);
+}
+
+/* Field refresh animation */
+[data-refresh='true'] {
+  opacity: 0;
+  transform: translateY(4px);
+  filter: blur(2px);
+}
+[data-refresh='false'] {
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0);
+  transition: opacity 260ms ease, transform 260ms ease, filter 260ms ease;
+}
+
+/* Hero callout for Next Action */
+.hero-callout {
+  position: relative;
+  overflow: hidden;
+  background: hsl(var(--accent-wash));
+  border: 1px solid hsl(var(--accent) / 0.15);
+  border-radius: 16px;
+}
+.hero-callout::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(600px 300px at 70% 20%, hsl(var(--accent) / 0.12), transparent);
+  pointer-events: none;
+}
+.dark .hero-callout {
+  border-color: hsl(var(--accent) / 0.25);
+}
+
+/* Thinking skeleton shimmer */
+@keyframes sdg-shimmer {
+  0% { opacity: 0.4; }
+  50% { opacity: 0.7; }
+  100% { opacity: 0.4; }
+}
+.thinking-field {
+  animation: sdg-shimmer 1.8s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .thinking-field { animation: none; opacity: 0.6; }
+  .elevation-1, .elevation-2, .elevation-3, .elevation-4 { transition: none; }
+}
+
+/* iOS safe area */
+.pb-safe { padding-bottom: env(safe-area-inset-bottom, 16px); }
+.pt-safe { padding-top: env(safe-area-inset-top, 0px); }

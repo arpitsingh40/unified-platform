@@ -1,0 +1,105 @@
+[package]
+name = "ari-runtime-host"
+version = "0.1.0"
+edition = "2021"
+description = "ARI Host Runtime - WASM component execution engine"
+license = "Apache-2.0"
+
+[dependencies]
+# WASM runtime
+wasmtime = { version = "24", features = ["component-model", "async"] }
+wasmtime-wasi = "24"
+# wasmtime-wasi-http removed — re-add with version matching wasmtime when HTTP capability needed (>v34 stack)
+# wasmtime-wasi-http = "0.2"
+
+# Component model bindings
+wit-bindgen = "0.35"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+
+# Async
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+metrics = "0.21"
+metrics-exporter-prometheus = "0.13"
+
+# Cryptography
+ring = "0.17"
+ed25519-dalek = "2"
+aes-gcm = "0.10"
+rand = "0.8"
+x509-parser = "0.16"
+rcgen = { version = "0.11", features = ["pem", "x509-parser"] }
+pem = "1.0"
+hex = "0.4"
+base64 = "0.22"
+
+# Configuration
+figment = { version = "0.10", features = ["toml", "env"] }
+
+# HTTP client for capability providers
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+
+# Database
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate"] }
+
+# Redis
+redis = { version = "0.24", features = ["tokio-comp"] }
+parking_lot = "0.12"
+getrandom = "0.2"
+
+# UUID
+uuid = { version = "1", features = ["v4", "serde", "fast-rng"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# HTTP server
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["trace", "cors"] }
+jsonwebtoken = "9"
+
+# Webhook HMAC + idempotency
+hmac = "0.12"
+sha2 = "0.10"
+governor = "0.6"
+subtle = "2"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+sales-agent = { path = "../../../examples/sales-agent" }
+
+[build-dependencies]
+wit-bindgen = "0.35"
+
+[features]
+default = []
+otel = ["opentelemetry", "opentelemetry-otlp", "tracing-opentelemetry"]
+
+[dependencies.opentelemetry]
+version = "0.21"
+optional = true
+
+[dependencies.opentelemetry-otlp]
+version = "0.16"
+optional = true
+features = ["tonic"]
+
+[dependencies.tracing-opentelemetry]
+version = "0.22"
+optional = true
+
+[dev-dependencies]
+tokio-test = "0.4"
+mockall = "0.12"

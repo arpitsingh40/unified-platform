@@ -1,0 +1,26 @@
+# Koyeb Blueprint — free tier alternative deployment
+# Deploy: app.koyeb.com → Create Service → GitHub → pick repo → auto-detects Dockerfile
+# Free tier suspends after ~20 min of inactivity, auto-resumes on request.
+name: smartdecision
+services:
+  - name: web
+    instance_type: free
+    ports:
+      - port: 8000
+        expose: true
+        health_check:
+          path: /api/health
+          interval: 30
+    env:
+      - KILL_SWITCH: ""
+      - DRY_RUN: ""
+      - CORS_ORIGINS: "*"
+      - DISABLE_DOCS: "1"
+      - SIGNUP_CREDITS: "200"
+      - TURN_COST: "5"
+      - WEEKLY_SPEND_CAP_INR: "10000"
+    secrets:
+      - MONGO_URL
+      - DEEPSEEK_API_KEY
+      - JWT_SECRET
+      - FRONTEND_BASE_URL

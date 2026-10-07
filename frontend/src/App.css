@@ -1,0 +1,5 @@
+/* SmartDecigen — premium 3D decision surface */
+
+textarea:focus-visible, input:focus-visible {
+  outline: none;
+}

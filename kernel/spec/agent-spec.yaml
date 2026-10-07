@@ -1,0 +1,228 @@
+# ARI Agent Specification v1
+# The universal contract for agent definition, compilation, and execution
+# 
+# Usage:
+#   ari build agent.yaml          # → agent.wasm component
+#   ari push agent.wasm           # → registry
+#   ari deploy agent.yaml         # → control plane
+#   ari run agent.yaml --local    # → local runtime
+
+spec_version: "1.0"
+metadata:
+  name: "sales-agent"
+  version: "1.2.0"
+  description: "Autonomous sales follow-up, pipeline health, proposal drafting"
+  author: "smartdecigen"
+  license: "Apache-2.0"
+  homepage: "https://github.com/smartdecigen/ari-agents/sales-agent"
+  tags: ["sales", "crm", "outbound", "pipeline"]
+
+# Capability requirements — what this agent CAN do
+# Runtime enforces: agent CANNOT access capabilities not declared here
+capabilities:
+  - name: "crm.read"
+    description: "Read CRM records (deals, contacts, accounts)"
+    required: true
+    tools: ["SALESFORCE_QUERY", "HUBSPOT_SEARCH", "PIPEDRIVE_GET"]
+    
+  - name: "crm.write"
+    description: "Create/update CRM records"
+    required: false
+    tools: ["SALESFORCE_UPSERT", "HUBSPOT_CREATE", "PIPEDRIVE_UPDATE"]
+    governance:
+      max_per_day: 100
+      requires_approval: true
+      
+  - name: "email.send"
+    description: "Send outbound emails"
+    required: true
+    tools: ["GMAIL_SEND", "OUTLOOK_SEND", "SENDGRID_SEND"]
+    governance:
+      max_per_day: 50
+      template_required: true
+      
+  - name: "calendar.schedule"
+    description: "Book meetings on calendar"
+    required: false
+    tools: ["GOOGLE_CALENDAR_CREATE", "OUTLOOK_CALENDAR_CREATE"]
+    governance:
+      requires_approval: true
+      
+  - name: "web.search"
+    description: "Search public web for prospect research"
+    required: false
+    tools: ["TAVILY_SEARCH", "SERPER_SEARCH"]
+    governance:
+      max_per_day: 200
+      
+  - name: "document.generate"
+    description: "Generate proposals, contracts, quotes"
+    required: false
+    tools: ["DOCUSEAL_CREATE", "PANDADOC_CREATE", "GOOGLE_DOCS_CREATE"]
+    governance:
+      requires_approval: true
+
+# Authority level — maps to governance ladder
+# L1=observe, L2=alert, L3=execute_reversible, L4=execute_with_approval, L5=founder_only
+authority: "L3"
+
+# Schedule — when the runtime invokes the agent
+# cron format or: realtime | hourly | daily | weekly | monthly
+schedule: "daily"
+timezone: "UTC"
+
+# Resource limits — enforced by runtime
+limits:
+  max_execution_time_seconds: 300
+  max_memory_mb: 512
+  max_tool_calls_per_invocation: 20
+  max_cost_usd_per_invocation: 0.50
+  max_concurrent_invocations: 3
+
+# Agent identity — used for signing, audit, billing
+identity:
+  agent_id: "sales-agent"
+  org_id: "${ORG_ID}"           # injected at deploy time
+  signing_key: "${SIGNING_KEY}" # injected at deploy time
+
+# Execution configuration
+execution:
+  entrypoint: "run"             # export name in WASM component
+  model: "claude-3.5-sonnet"    # default model (can be overridden)
+  temperature: 0.3
+  max_tokens: 4000
+  
+  # System prompt — compiled into the component
+  system_prompt: |
+    You are the Sales Agent for ${ORG_NAME}.
+    North Star: ${NORTH_STAR}
+    Strategic Priorities: ${PRIORITIES}
+    
+    Your mission: Monitor pipeline health, follow up stuck deals, draft proposals.
+    Authority: L3 (execute reversible actions: send emails, create CRM tasks, schedule meetings).
+    Never: commit to pricing, sign contracts, delete records.
+    
+    Decision framework:
+    1. FETCH current pipeline state via crm.read
+    2. ANALYZE for stalled deals (>14 days no activity), at-risk accounts
+    3. DECIDE highest-leverage action (email, task, meeting, proposal)
+    4. EXECUTE via declared capabilities
+    5. VERIFY outcome (email sent, task created, meeting booked)
+    6. LEARN — record outcome for pattern detection
+    
+    Output format: JSON only — see decision_schema below
+
+# Decision schema — the agent MUST output valid JSON matching this schema
+# Runtime validates before executing any tool calls
+decision_schema:
+  type: object
+  required: ["action", "reasoning", "tool_calls"]
+  properties:
+    action:
+      type: string
+      enum: ["FOLLOW_UP", "PROPOSE_MEETING", "DRAFT_PROPOSAL", "ALERT", "ESCALATE", "NOTHING"]
+    reasoning:
+      type: string
+      maxLength: 2000
+    tool_calls:
+      type: array
+      maxItems: 10
+      items:
+        type: object
+        required: ["capability", "tool", "args", "reason"]
+        properties:
+          capability:
+            type: string
+          tool:
+            type: string
+          args:
+            type: object
+          reason:
+            type: string
+            maxLength: 500
+    confidence:
+      type: number
+      minimum: 0
+      maximum: 1
+    review_after_days:
+      type: integer
+      minimum: 1
+      maximum: 90
+
+# Input context — what the runtime provides to the agent at invocation
+input_context:
+  - name: "pipeline_snapshot"
+    type: "object"
+    description: "Current pipeline state from CRM"
+    required: true
+  - name: "recent_activity"
+    type: "array"
+    description: "Last 50 activities across all deals"
+    required: true
+  - name: "account_health_scores"
+    type: "object"
+    description: "Health scores for key accounts"
+    required: false
+  - name: "pending_proposals"
+    type: "array"
+    description: "Proposals sent but not responded to"
+    required: false
+  - name: "calendar_availability"
+    type: "object"
+    description: "Founder/team availability for next 2 weeks"
+    required: false
+
+# Verification — how the runtime confirms outcomes
+verification:
+  - capability: "email.send"
+    method: "webhook"           # wait for delivery webhook
+    timeout_seconds: 300
+  - capability: "crm.write"
+    method: "read_back"         # read the record back
+    timeout_seconds: 30
+  - capability: "calendar.schedule"
+    method: "read_back"
+    timeout_seconds: 30
+  - capability: "document.generate"
+    method: "human_review"      # founder approval required
+    timeout_seconds: 86400
+
+# Learning configuration
+learning:
+  enabled: true
+  pattern_detection: true
+  cross_org_sharing: "anonymized"  # "none" | "anonymized" | "full"
+  outcome_retention_days: 365
+
+# Observability hooks
+observability:
+  trace_sampling: 1.0
+  metrics:
+    - "invocations_total"
+    - "tool_calls_total"
+    - "tool_latency_seconds"
+    - "cost_usd_total"
+    - "verification_success_rate"
+    - "decision_confidence_avg"
+  alerts:
+    - name: "high_failure_rate"
+      condition: "verification_success_rate < 0.8"
+      severity: "critical"
+    - name: "cost_spike"
+      condition: "cost_usd_total_1h > 10"
+      severity: "warning"
+
+# Deployment targets
+deployment:
+  targets:
+    - name: "ari-cloud"
+      type: "managed"
+      regions: ["us-east-1", "eu-west-1", "ap-south-1"]
+    - name: "self-hosted"
+      type: "onprem"
+      requirements:
+        - "kubernetes >= 1.28"
+        - "wasm-runtime: wasmedge >= 0.14"
+    - name: "edge"
+      type: "cloudflare-workers"
+      regions: ["global"]

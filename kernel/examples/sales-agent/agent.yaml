@@ -1,0 +1,84 @@
+spec_version: "1.0"
+metadata:
+  name: "sales-agent"
+  version: "0.1.0"
+  description: "Pipeline health — stalled deals >14d, follow-up and proposal drafting"
+  author: "ari-enterprise"
+  license: "Apache-2.0"
+  tags: ["sales","crm","pipeline"]
+
+capabilities:
+  - name: "crm.read"
+    description: "Read CRM (deals, contacts) — L3 auto"
+    required: true
+    tools: ["crm.query"]
+  - name: "crm.write"
+    description: "Update CRM records — requires approval"
+    required: false
+    tools: ["crm.upsert"]
+    governance: { requires_approval: true, max_per_day: 100 }
+  - name: "email.send"
+    description: "Send follow-up email — requires approval + template"
+    required: true
+    tools: ["email.send"]
+    governance: { requires_approval: true, template_required: true, max_per_day: 50 }
+  - name: "web.search"
+    description: "Prospect research"
+    required: false
+    tools: ["web.search"]
+    governance: { max_per_day: 200 }
+  - name: "document.generate"
+    description: "Generate proposal — human review"
+    required: false
+    tools: ["document.generate"]
+    governance: { requires_approval: true }
+
+authority: "L3"
+schedule: "0 9 * * *" # daily 09:00 UTC
+timezone: "UTC"
+
+limits:
+  max_execution_time_seconds: 300
+  max_memory_mb: 512
+  max_tool_calls_per_invocation: 10
+  max_cost_usd_per_invocation: 1.00
+  max_concurrent_invocations: 2
+
+execution:
+  entrypoint: "run"
+  model: "claude-3.5-sonnet"
+  temperature: 0.2
+  max_tokens: 3000
+  system_prompt: |
+    You are the Sales Agent. North Star: keep pipeline moving.
+    Authority: L3 (reversible actions auto, irreversible require approval).
+    1. FETCH pipeline via crm.read
+    2. DETECT stalled deals (>14d no activity), at-risk accounts
+    3. DECIDE highest-leverage action per decision_schema
+    4. Output JSON only.
+
+decision_schema:
+  type: object
+  required: ["action","reasoning","tool_calls"]
+  properties:
+    action: { type: string, enum: ["FOLLOW_UP","PROPOSE_MEETING","DRAFT_PROPOSAL","ALERT","ESCALATE","NOTHING"] }
+    reasoning: { type: string, maxLength: 2000 }
+    tool_calls: { type: array, maxItems: 10, items: { type: object, required: ["capability","tool","args","reason"], properties: { capability: {type: string}, tool: {type: string}, args: {type: object}, reason: {type: string, maxLength: 500} } } }
+    confidence: { type: number, minimum: 0, maximum: 1 }
+    review_after_days: { type: integer, minimum: 1, maximum: 90 }
+
+verification:
+  - capability: "email.send"
+    method: "webhook"
+    timeout_seconds: 300
+  - capability: "crm.write"
+    method: "read_back"
+    timeout_seconds: 30
+  - capability: "document.generate"
+    method: "human_review"
+    timeout_seconds: 86400
+
+identity:
+  agent_id: "sales-agent"
+  org_id: "${ORG_ID}"
+  signing_key: "${SIGNING_KEY}"

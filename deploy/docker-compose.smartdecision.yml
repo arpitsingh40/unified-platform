@@ -1,0 +1,43 @@
+services:
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+
+  backend:
+    build: .
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      # ── Required ──
+      MONGO_URL: mongodb://mongo:27017/smartdecision
+      DB_NAME: smartdecision
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+      JWT_SECRET: ${JWT_SECRET:-change-this-in-production-32chars-min}
+      
+      # ── Optional: Execution (Connect tools) ──
+      COMPOSIO_API_KEY: ${COMPOSIO_API_KEY:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_OWNER: ${GITHUB_OWNER:-}
+      SLACK_TOKEN: ${SLACK_TOKEN:-}
+      GMAIL_ACCESS_TOKEN: ${GMAIL_ACCESS_TOKEN:-}
+      NOTION_TOKEN: ${NOTION_TOKEN:-}
+      NOTION_PARENT_PAGE_ID: ${NOTION_PARENT_PAGE_ID:-}
+      STRIPE_API_KEY: ${STRIPE_API_KEY:-}
+      VERCEL_TOKEN: ${VERCEL_TOKEN:-}
+      
+      # ── Configuration ──
+      CORS_ORIGINS: "*"
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:8000}
+      TURN_COST: "5"
+      SIGNUP_CREDITS: "100"
+      DISABLE_DOCS: "0"
+    depends_on:
+      - mongo
+    restart: unless-stopped
+
+volumes:
+  mongo_data:

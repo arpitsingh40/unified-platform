@@ -1,0 +1,36 @@
+# Render Blueprint — free tier deployment for Smartdecision
+# Deploy: push to GitHub → render.com/new → "Blueprint" → pick this repo → Apply
+# Free tier sleeps after 15 min of inactivity and auto-wakes on request.
+services:
+  - type: web
+    name: smartdecision
+    runtime: docker
+    repo: https://github.com/arpitsingh40/Smartdecision
+    branch: main
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      # MongoDB Atlas connection string (set in dashboard: MONGO_URL)
+      - key: MONGO_URL
+        sync: false
+      # DeepSeek LLM key (set in dashboard: DEEPSEEK_API_KEY)
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      # Session signing secret (set in dashboard: JWT_SECRET)
+      - key: JWT_SECRET
+        sync: false
+      # Public URL of the service (e.g. https://smartdecision.onrender.com)
+      - key: FRONTEND_BASE_URL
+        sync: false
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: DISABLE_DOCS
+        value: "1"
+      - key: SIGNUP_CREDITS
+        value: "200"
+      - key: TURN_COST
+        value: "5"
+      # Governance defaults
+      - key: WEEKLY_SPEND_CAP_INR
+        value: "10000"

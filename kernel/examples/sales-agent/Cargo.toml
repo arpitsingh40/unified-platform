@@ -1,0 +1,23 @@
+[package]
+name = "sales-agent"
+version = "0.1.0"
+edition = "2021"
+description = "ARI sales-agent — pipeline health, stalled-deal follow-up, proposal drafting (L3)"
+license = "Apache-2.0"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+name = "sales_agent"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+anyhow = "1.0"
+
+# In a component build this would be ari-guest + wit-bindgen. For now the host simulates
+# the decision; this crate is a native fallback that compiles to WASI and exposes `run`.
+
+[profile.release]
+opt-level = "s"
+lto = true
