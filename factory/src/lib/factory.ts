@@ -1,6 +1,8 @@
-// BusinessFactory — idea → worth business
-// One function builds the entire business: brand + catalog + storefront + checkout + admin
-// Usage: import { buildBusiness } from "@/lib/factory"; await buildBusiness("fast fashion ecommerce")
+// BusinessFactory — idea → worth business (unified-platform, FORGE)
+// Delegates to blueprints/* registry (fashion/beauty/food/digital/generic).
+// Business-os LLM fallback (factory_bridge.generate_catalog) remains source of truth when key=custom.
+
+import { pickBlueprint as pick } from "../../blueprints";
 
 export type BusinessBlueprint = {
   brand: { name: string; tagline: string; colors: { bg: string; text: string; accent: string } };
@@ -10,27 +12,10 @@ export type BusinessBlueprint = {
   worth: { aov: number; kpi: string[] };
 };
 
-const TEMPLATES: Record<string, BusinessBlueprint> = {
-  "fast fashion ecommerce": {
-    brand: { name: "DRIFT", tagline: "New drops weekly. Gone forever.", colors: { bg: "#FFF8F0", text: "#0a0a0a", accent: "#FF3B30" } },
-    pricing: { range: "₹599–₹1,999", avg: 1399, margin: "65%", valuationMultiple: 2.5 },
-    catalog: { count: 24, categories: ["Tops","Bottoms","Dresses","Outerwear","Accessories"], drops: ["Drop 01 — Monsoon","Drop 02 — Afterhours","Drop 03 — Off-Duty"] },
-    routes: ["/","/catalog","/product/[id]","/cart","/checkout","/admin","/api/checkout"],
-    worth: { aov: 1399, kpi: ["Orders","Revenue","AOV","Valuation (2.5×)"] },
-  },
-  "default": {
-    brand: { name: "LUMEN", tagline: "Built for you. Shipped today.", colors: { bg: "#FFF8F0", text: "#0a0a0a", accent: "#0a0a0a" } },
-    pricing: { range: "₹999–₹4,999", avg: 2499, margin: "60%", valuationMultiple: 3 },
-    catalog: { count: 12, categories: ["New In","Bestsellers"], drops: ["Drop 01"] },
-    routes: ["/","/catalog","/product/[id]","/cart","/checkout","/admin","/api/checkout"],
-    worth: { aov: 2499, kpi: ["Orders","Revenue","AOV","Valuation"] },
-  }
-};
-
 function pickTemplate(idea: string): BusinessBlueprint {
-  const key = idea.toLowerCase();
-  if (key.includes("fashion") || key.includes("apparel") || key.includes("clothing")) return TEMPLATES["fast fashion ecommerce"];
-  return TEMPLATES["default"];
+  const b = pick(idea);
+  const { key: _k, ...rest } = b as BusinessBlueprint & { key: string };
+  return rest;
 }
 
 // The function you asked for — call this from anywhere in your code
