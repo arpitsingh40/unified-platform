@@ -1,13 +1,39 @@
 import axios, { AxiosError, AxiosResponse } from 'axios';
 import { toast } from 'sonner';
 
-// Backend base URL from env or same origin
-const BACKEND_URL: string = import.meta.env.VITE_BACKEND_URL || '';
+// Backend base URL: in Tauri the WebView origin is tauri:// — empty would break.
+// Use explicit localhost for desktop; browser keeps same-origin ("").
+const __TAURI__ = typeof window !== 'undefined' && '__TAURI__' in window;
+const BACKEND_URL: string = __TAURI__
+  ? (import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000')
+  : (import.meta.env.VITE_BACKEND_URL || '');
+
+// Desktop (Tauri) runs in a WebView where cookie domain can mismatch —
+ // keep a Bearer token in localStorage as a fallback. Browser users ignore it.
+const LS_TOKEN = 'sdg_token_bearer';
+export const getStoredToken = (): string | null => {
+  try { return localStorage.getItem(LS_TOKEN); } catch { return null; }
+};
+export const setStoredToken = (t: string | null) => {
+  try {
+    if (t) localStorage.setItem(LS_TOKEN, t);
+    else localStorage.removeItem(LS_TOKEN);
+  } catch { /* ignore */ }
+};
 
 // Shared axios instance with credentials
 export const api = axios.create({
   baseURL: `${BACKEND_URL}/api`,
   withCredentials: true,
+});
+
+// Attach Authorization header when we have a stored token (Tauri fallback + future-proofing)
+api.interceptors.request.use((config) => {
+  const token = getStoredToken();
+  if (token && !config.headers.Authorization) {
+    (config.headers as Record<string, string>).Authorization = `Bearer ${token}`;
+  }
+  return config;
 });
 
 // Payload shape for task updates
@@ -42,6 +68,8 @@ api.interceptors.response.use(
         detail: detail.includes('token limit') ? 'Monthly token limit reached. Top up or wait for your next billing cycle.' : detail || 'Not enough credits.',
       }));
     } else if (!error.response || (status !== undefined && status >= 500 && status < 600)) {
+      // Web landing (static GH Pages) has no server → suppress "Could not reach server"
+      if (typeof window !== 'undefined' && (import.meta as unknown as Record<string, unknown>)?.env && (import.meta.env as Record<string, string>).VITE_TARGET === 'web') return Promise.reject(error);
       const msg = detail
         || (status !== undefined && status >= 500 ? 'The server had a problem. Please try again.' : 'Could not reach the server. Check your connection.');
       toast.error(msg);

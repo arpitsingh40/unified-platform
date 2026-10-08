@@ -123,15 +123,23 @@ export default function LandingPage() {
           <p className="mt-6 text-lg sm:text-xl text-muted max-w-2xl mx-auto leading-relaxed">
             One conversation builds your company model. 12 autonomous agents run it. You steer.
           </p>
-          <div className="mt-10 flex items-center justify-center gap-4">
-            <Button onClick={() => navigate('/auth')}
-              className="rounded-xl h-12 px-8 text-base font-medium bg-accent hover:bg-accent/90 text-white">
-              Start your company
-            </Button>
-            <Button onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })}
-              variant="outline" className="rounded-xl h-12 px-8 text-base">
-              See how it works
-            </Button>
+          <div className="mt-10 flex flex-col items-center gap-3">
+            <div className="flex items-center justify-center gap-4 flex-wrap">
+              <Button onClick={() => navigate('/auth')}
+                className="rounded-xl h-12 px-8 text-base font-medium bg-accent hover:bg-accent/90 text-white">
+                Start your company
+              </Button>
+              <Button onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })}
+                variant="outline" className="rounded-xl h-12 px-8 text-base">
+                See how it works
+              </Button>
+            </div>
+            {import.meta.env.VITE_TARGET === 'web' && (
+              <a href="https://github.com/anomalyco/unified-platform/releases" target="_blank" rel="noreferrer"
+                className="text-xs text-muted hover:text-accent underline underline-offset-4">
+                Download FORGE for Windows — execution runs locally, only LLM leaves your device
+              </a>
+            )}
           </div>
         </div>
 
@@ -147,8 +155,8 @@ export default function LandingPage() {
       <AnimateIn delay={0.1}><HowItWorks /></AnimateIn>
       <AnimateIn delay={0.15}><FeaturesSection /></AnimateIn>
       <AnimateIn delay={0.2}><DemoSection /></AnimateIn>
-      <AnimateIn delay={0.25}><TestimonialsCarousel /></AnimateIn>
-      <AnimateIn delay={0.3}><PricingSection /></AnimateIn>
+      {import.meta.env.VITE_TARGET !== 'web' && <AnimateIn delay={0.25}><TestimonialsCarousel /></AnimateIn>}
+      {import.meta.env.VITE_TARGET !== 'web' && <AnimateIn delay={0.3}><PricingSection /></AnimateIn>}
       <AnimateIn delay={0.35}><CTASection /></AnimateIn>
       <Footer />
     </div>

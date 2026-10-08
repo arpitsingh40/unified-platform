@@ -72,6 +72,7 @@ from business_builder import ensure_builder_startup
 from factory_router import router as factory_router
 from factory_bridge import ensure_factory_startup
 from growth_engine import ensure_growth_startup
+from desktop_router import router as desktop_router
 
 # Turn cost and reserve settings for credit billing
 TURN_COST = int(os.environ.get("TURN_COST", "5"))
@@ -341,11 +342,11 @@ async def signup(body: SignupIn, request: Request):
             inc_stats({"credits_issued_free": 2 * bonus})
             user["credits"] += bonus
     _, jwt_str = make_token(user["id"])
-    resp = JSONResponse({"user": {"id": user["id"], "email": user["email"], "name": user["name"], "credits": user["credits"], "is_admin": False, "questionnaire_completed": False, "org_id": user.get("org_id"), "org_role": user.get("org_role")}})
+    resp = JSONResponse({"user": {"id": user["id"], "email": user["email"], "name": user["name"], "credits": user["credits"], "is_admin": False, "questionnaire_completed": False, "org_id": user.get("org_id"), "org_role": user.get("org_role")}, "token": jwt_str})
     set_auth_cookie(resp, jwt_str)
     return resp
 
-# Authenticate and issue a session cookie
+# Authenticate and issue a session cookie (+ token in body so desktop/WebView survives cookie quirks)
 @api.post("/auth/login")
 async def login(body: LoginIn, request: Request):
     _rate_limit(f"login:{client_ip(request)}", max_reqs=10, window=300.0)
@@ -358,7 +359,7 @@ async def login(body: LoginIn, request: Request):
         geo = geo_lookup(ip)
         await async_users_col.update_one({"id": user["id"]}, {"$set": {"country": geo["country"], "city": geo["city"]}})
     _, jwt_str = make_token(user["id"])
-    resp = JSONResponse({"user": {"id": user["id"], "email": user["email"], "name": user.get("name", ""), "credits": user.get("credits", 0), "is_admin": bool(user.get("is_admin")), "questionnaire_completed": bool(user.get("questionnaire_completed")), "org_id": user.get("org_id"), "org_role": user.get("org_role")}})
+    resp = JSONResponse({"user": {"id": user["id"], "email": user["email"], "name": user.get("name", ""), "credits": user.get("credits", 0), "is_admin": bool(user.get("is_admin")), "questionnaire_completed": bool(user.get("questionnaire_completed")), "org_id": user.get("org_id"), "org_role": user.get("org_role")}, "token": jwt_str})
     set_auth_cookie(resp, jwt_str)
     return resp
 
@@ -972,6 +973,7 @@ app.include_router(governance_router)
 app.include_router(revenue_router)
 app.include_router(business_builder_router)
 app.include_router(factory_router)
+app.include_router(desktop_router)
 
 scheduler = BackgroundScheduler(daemon=True)
 
@@ -1256,14 +1258,27 @@ def _revenue_cycle_cron():
 scheduler.add_job(_revenue_cycle_cron, IntervalTrigger(hours=6))
 
 
-# Configure CORS from environment origins
-CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "")
-if not CORS_ORIGINS:
-    log.warning("CORS_ORIGINS not set — allowing no cross-origin requests. Set to comma-separated origins for production.")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=CORS_ORIGINS.split(",") if CORS_ORIGINS else [],
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
-)
+# Configure CORS from environment origins (supports wildcard + localhost for Tauri desktop)
+_CORS_RAW = os.environ.get("CORS_ORIGINS", "").strip()
+if _CORS_RAW == "*":
+    _cors_origins = ["http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "https://tauri.localhost", "tauri://localhost", "http://tauri.localhost"]
+    _allow_origin_regex = r"^https?://(localhost|127\.0\.0\.1|tauri\.localhost)(:\d+)?$|^tauri://.*"
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_origin_regex=_allow_origin_regex,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
+        expose_headers=["Set-Cookie"],
+    )
+else:
+    if not _CORS_RAW:
+        log.warning("CORS_ORIGINS not set — allowing no cross-origin requests. Set to comma-separated origins for production.")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_CORS_RAW.split(",") if _CORS_RAW else [],
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
+    )

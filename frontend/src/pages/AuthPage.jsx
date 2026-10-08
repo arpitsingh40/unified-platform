@@ -7,7 +7,7 @@ import {
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
 import { toast } from 'sonner';
-import { api } from '../lib/api';
+import { api, setStoredToken } from '../lib/api';
 import { useAuth } from '../App';
 
 // Render the app logo mark SVG
@@ -49,6 +49,7 @@ export default function AuthPage() {
         ? { email, password }
         : { email, password, name, ...(refCode ? { ref: refCode } : {}) };
       const r = await api.post(path, payload);
+      if (r.data?.token) setStoredToken(r.data.token);
       login(r.data.user);
       if (r.data.user?.questionnaire_completed === false) {
         try { window.trackPixel?.('Lead', {}); } catch (_) {}

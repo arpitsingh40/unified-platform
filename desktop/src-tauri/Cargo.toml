@@ -1,0 +1,28 @@
+[package]
+name = "forge-desktop"
+version = "1.0.0"
+description = "FORGE — Your company. Running on autopilot. (Windows Desktop)"
+authors = ["FORGE"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2.2", features = [] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2.2", features = ["tray-icon"] }
+tauri-plugin-shell = "2.2"
+tauri-plugin-autostart = "2.4"
+tauri-plugin-single-instance = "2.3"
+tauri-plugin-window-state = { version = "2", features = [] }
+tauri-plugin-fs = "2.2"
+tauri-plugin-http = "2.4"
+tauri-plugin-os = "2.2"
+tauri-plugin-dialog = "2.2"
+tauri-plugin-opener = "2.2"
+tauri-plugin-notification = "2.2"
+tauri-plugin-global-shortcut = "2.2"
+tauri-plugin-clipboard-manager = "2.2"
+opener = "0.7"
+dirs = "5"

@@ -145,13 +145,19 @@ export default function JourneyPage() {
   }, [journey?.messages?.length, journey?.has_direction, journey?.milestones?.length, journey?.stage,
       journey?.team?.started, journey?.team?.messages?.length, journey?.team?.plan, busy]);
 
-  // Map engine errors to friendly toasts
+  // Map engine errors to friendly toasts (and surface auth failures visibly)
   const handleError = (e) => {
     const status = e?.response?.status;
+    const detail = e?.response?.data?.detail || '';
+    if (status === 401) {
+      toast.error(typeof detail === 'string' && detail ? detail : 'Session expired. Please sign in again.');
+      return;
+    }
     if (status === 402) {
       toast.error('You are out of credits. Top up to keep going.');
     } else {
-      toast.error('Your thinking partner could not respond. You were not charged, try again.');
+      const msg = typeof detail === 'string' && detail ? detail : '';
+      toast.error(msg || 'Your thinking partner could not respond. You were not charged, try again.');
     }
   };
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, createContext, useContext, useCallback, lazy, Suspense, FC } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { BrowserRouter, HashRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { ThemeProvider } from 'next-themes';
 import { Toaster } from './components/ui/sonner';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -11,7 +11,7 @@ import { Button } from './components/ui/button';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from './components/ui/dialog';
-import { api } from './lib/api';
+import { api, setStoredToken } from './lib/api';
 import { toast } from 'sonner';
 import './App.css';
 
@@ -38,6 +38,7 @@ const WeeklyReviewPage = lazy(() => import('./pages/WeeklyReviewPage'));
 const BusinessOSPage = lazy(() => import('./pages/BusinessOSPage'));
 const ConnectionsPage = lazy(() => import('./pages/ConnectionsPage'));
 const RecordRoomPage = lazy(() => import('./pages/RecordRoomPage'));
+const BrowserPage = lazy(() => import('./pages/BrowserPage'));
 
 // Authenticated user shape stored in context
 interface AppUser {
@@ -122,6 +123,7 @@ const App: FC = () => {
 
   const logout = useCallback(() => {
     api.post('/auth/logout').catch(() => {});
+    setStoredToken(null);
     setUser(null);
   }, []);
 
@@ -129,7 +131,9 @@ const App: FC = () => {
     setUser((u) => u ? { ...u, credits } : u);
   }, []);
 
+  const isWebLandingEnv = import.meta.env.VITE_TARGET === 'web';
   useEffect(() => {
+    if (isWebLandingEnv) { setChecking(false); return; }
     let cancelled = false;
     const verify = () => {
       api.get<AppUser>('/auth/me').then((r) => {
@@ -187,16 +191,22 @@ const App: FC = () => {
     );
   }
 
+  // GH Pages static (VITE_TARGET=web) has no server → HashRouter + no auth check.
+  // Desktop app and normal dev keep BrowserRouter + real API auth.
+  const isWebLanding = import.meta.env.VITE_TARGET === 'web';
+  const Router: FC<{children: React.ReactNode}> = isWebLanding ? HashRouter as unknown as FC<any> : BrowserRouter as unknown as FC<any>;
+
   return (
     <AuthContext.Provider value={{ user, login, logout, setCredits, setUser }}>
       <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
       <div className="paper min-h-screen">
-        <BrowserRouter>
+        <Router>
           <InsufficientCreditsModal />
           <Suspense fallback={<div className="flex items-center justify-center min-h-screen bg-background"><div className="space-y-4 w-full max-w-md mx-auto px-6"><div className="h-8 w-3/5 animate-pulse rounded-lg bg-primary/10" /><div className="h-4 w-2/5 animate-pulse rounded-lg bg-primary/10" /><div className="mt-8 space-y-3"><div className="h-3 w-full animate-pulse rounded-lg bg-primary/10" /><div className="h-3 w-full animate-pulse rounded-lg bg-primary/10" /><div className="h-3 w-4/5 animate-pulse rounded-lg bg-primary/10" /></div></div></div>}>
+          {!isWebLanding && user === null && !checking ? null : null}
           <Routes>
-            <Route path="/" element={user ? <Navigate to="/app" replace /> : withErrorBoundary(LandingPage)({})} />
-            <Route path="/auth" element={user ? <Navigate to="/app" replace /> : withErrorBoundary(AuthPage)({})} />
+            <Route path="/" element={isWebLanding ? withErrorBoundary(LandingPage)({}) : (user ? <Navigate to="/app" replace /> : withErrorBoundary(LandingPage)({}))} />
+            <Route path="/auth" element={isWebLanding ? withErrorBoundary(LandingPage)({}) : (user ? <Navigate to="/app" replace /> : withErrorBoundary(AuthPage)({}))} />
             <Route path="/app" element={user ? withErrorBoundary(JourneyPage)({}) : <Navigate to="/auth" replace />} />
             <Route path="/app/decisions" element={user ? withErrorBoundary(DecisionsPage)({}) : <Navigate to="/auth" replace />} />
             <Route path="/app/brain" element={user ? withErrorBoundary(BrainPage)({}) : <Navigate to="/auth" replace />} />
@@ -221,10 +231,11 @@ const App: FC = () => {
             <Route path="/app/business-os" element={user ? withErrorBoundary(BusinessOSPage)({}) : <Navigate to="/auth" replace />} />
             <Route path="/app/connections" element={user ? withErrorBoundary(ConnectionsPage)({}) : <Navigate to="/auth" replace />} />
             <Route path="/app/record-room" element={user ? withErrorBoundary(RecordRoomPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/app/browser" element={user ? withErrorBoundary(BrowserPage)({}) : <Navigate to="/auth" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           </Suspense>
-        </BrowserRouter>
+        </Router>
         <Toaster position="bottom-right" />
       </div>
       </ThemeProvider>
