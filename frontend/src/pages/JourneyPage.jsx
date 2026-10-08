@@ -64,7 +64,9 @@ function DirList({ icon: Icon, label, items }) {
 // Business OS status strip — shows live org status on dashboard
 function OSStatusStrip() {
   const [os, setOs] = useState(null);
+  const isWebOs = typeof window !== 'undefined' && import.meta.env.VITE_TARGET === 'web';
   useEffect(() => {
+    if (isWebOs) return;
     api.get('/business-os/status').then(r => setOs(r.data)).catch(() => {});
     const id = setInterval(() => {
       api.get('/business-os/status').then(r => setOs(r.data)).catch(() => {});
@@ -157,10 +159,10 @@ export default function JourneyPage() {
   }, [journey?.messages?.length, journey?.has_direction, journey?.milestones?.length, journey?.stage,
       journey?.team?.started, journey?.team?.messages?.length, journey?.team?.plan, busy]);
 
-  // Map engine errors to friendly toasts (and surface auth failures visibly)
   const handleError = (e) => {
     const status = e?.response?.status;
-    const detail = e?.response?.data?.detail || '';
+    const raw = e?.response?.data;
+    const detail = typeof raw === 'string' ? raw : (raw?.detail || raw?.error || raw?.message || '');
     if (status === 401) {
       toast.error(typeof detail === 'string' && detail ? detail : 'Session expired. Please sign in again.');
       return;
@@ -168,8 +170,9 @@ export default function JourneyPage() {
     if (status === 402) {
       toast.error('You are out of credits. Top up to keep going.');
     } else {
-      const msg = typeof detail === 'string' && detail ? detail : '';
-      toast.error(msg || 'Your thinking partner could not respond. You were not charged, try again.');
+      // Supabase Edge Function returns {error: "..."} even on 502/500 — surface it
+      const msg = typeof detail === 'string' && detail ? detail : (e?.message || '');
+      toast.error(msg.slice(0, 280) || 'Your thinking partner could not respond. You were not charged, try again.');
     }
   };
 
@@ -190,7 +193,12 @@ export default function JourneyPage() {
         setJourney((prev) => ({ ...(prev ?? { started: true }), session_id: convId, webConversationId: convId, messages: [...(prev?.messages ?? [{ role: 'user', text: obj }]), { role: 'assistant', text: reply, at: new Date().toISOString() }], model: { objective: obj }, started: true }));
         if (convId) setSessionId(convId);
         setPanelOpen(true);
-      } catch (e) { handleError({ response: { status: 0, data: { detail: e?.message ?? 'Chat failed' } } }); } finally { setBusy(false); }
+      } catch (e) {
+        const detail = e?.message ?? 'Chat failed.';
+        if (String(detail).includes('LLM') || String(detail).includes('502')) {
+          setJourney((j) => j ? { ...j, messages: [...j.messages, { role: 'assistant', text: `Offline mode (LLM busy — ${String(detail).slice(0, 220)}). Quick start:\n\n• Goal in one sentence\n• Easiest 48h action\n• Download FORGE for Windows for local execution.`, at: new Date().toISOString() }] } : { started: true, messages: [{ role: 'assistant', text: `Offline: ${String(detail).slice(0, 200)} — try again or download FORGE.exe.` }] });
+        } else handleError({ response: { status: 0, data: { detail } } });
+      } finally { setBusy(false); }
       return;
     }
     try {
@@ -201,6 +209,10 @@ export default function JourneyPage() {
       setPanelOpen(true);
     } catch (e) { handleError(e); } finally { setBusy(false); }
   }, [objective, busy, setCredits, isWeb, journey?.webConversationId]);
+
+  // History for offline resilience (JourneyPage scroll)
+  const historyEndRef = useRef(null);
+  useEffect(() => { historyEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [journey?.messages]);
 
   // Send a chat — web: same Edge Function, else business-os
   const send = useCallback(async () => {
@@ -237,7 +249,15 @@ export default function JourneyPage() {
       if (r.data.session_id) setSessionId(r.data.session_id);
       if (typeof r.data.credits === 'number') setCredits(r.data.credits);
     } catch (e) {
-      handleError(e);
+      const detail = e?.response?.data?.detail || e?.message || 'Chat failed.';
+      // Surface Edge Function non-2xx (Zen 403/502, HF no credits) with graceful fallback
+      if (String(detail).includes('LLM') || e?.response?.status === 502) {
+        // Keep the user's message, add a local offline reply so they can continue planning
+        setJourney((j) => j ? { ...j, messages: [...j.messages, { role: 'assistant', text: `I'm temporarily offline (LLM busy — ${String(detail).slice(0, 220)}). Here's a lightweight plan to keep going:\n\n• Vision → one sentence: what changes for the user?\n• 48h move → the smallest promise you can keep.\n• Download FORGE for Windows to run locally with your own models.`, at: new Date().toISOString() }] } : j);
+        toast.info('LLM is busy — showing offline plan. Download FORGE.exe to run locally.');
+      } else {
+        handleError(e);
+      }
       setMessage(msg);
       api.get('/journey').then((r) => r.data && setJourney(r.data)).catch(() => {});
     } finally { setBusy(false); }
@@ -248,18 +268,20 @@ export default function JourneyPage() {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); fn(); }
   };
 
-  // Ask the engine to shape a direction
+  // Ask the engine to shape a direction (web GH Pages has no business-os direction — show offline)
   const shapeDirection = useCallback(async () => {
+    if (isWeb) { toast.info('Direction shaping runs in the Windows app. Your chat is saved — download FORGE.exe to shape direction & milestones.'); return; }
     setShaping(true);
     try {
       const r = await api.post('/journey/direction');
       setJourney(r.data);
       if (typeof r.data.credits === 'number') setCredits(r.data.credits);
     } catch (e) { handleError(e); } finally { setShaping(false); }
-  }, [setCredits]);
+  }, [setCredits, isWeb]);
 
   // Refine the direction with feedback
   const refineDirection = useCallback(async () => {
+    if (isWeb) { toast.info('Refine runs in the Windows app. Download FORGE.exe for direction & milestones.'); return; }
     const fb = refineText.trim();
     if (!fb || refining) return;
     setRefining(true);
@@ -269,10 +291,11 @@ export default function JourneyPage() {
       if (typeof r.data.credits === 'number') setCredits(r.data.credits);
       setRefineText('');
     } catch (e) { handleError(e); } finally { setRefining(false); }
-  }, [refineText, refining, setCredits]);
+  }, [refineText, refining, setCredits, isWeb]);
 
   // Approve the direction to build milestones
   const approveDirection = useCallback(async () => {
+    if (isWeb) { toast.info('Milestones are built in the Windows app. Download FORGE.exe to continue.'); return; }
     setApproving(true);
     try {
       const r = await api.post('/journey/direction/approve');
@@ -280,7 +303,7 @@ export default function JourneyPage() {
       if (typeof r.data.credits === 'number') setCredits(r.data.credits);
       window.dispatchEvent(new Event('sdg-journey-changed'));
     } catch (e) { handleError(e); } finally { setApproving(false); }
-  }, [setCredits]);
+  }, [setCredits, isWeb]);
 
   // Advance a milestone through its statuses
   const cycleMilestone = useCallback(async (m) => {
@@ -476,8 +499,10 @@ export default function JourneyPage() {
   const showTeamOffer = !!(journey.milestones && journey.milestones.length) && !team.started && !team.offer_dismissed && !team.plan;
   const teamHasAnswer = (team.messages || []).some((m) => m.role === 'user');
 
+  const isWebPanel = typeof window !== 'undefined' && import.meta.env.VITE_TARGET === 'web';
   const Panel = (
     <div className="space-y-5">
+      {!isWebPanel ? (
       <div>
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-medium text-muted uppercase tracking-wide">Decision confidence</span>
@@ -493,6 +518,8 @@ export default function JourneyPage() {
             <span>I have enough to shape an initial direction with you. Keep going, or shape it below.</span>
           </div>
         ) : null}
+      </div>
+      ) : null}
         {journey.milestones && journey.milestones.length ? (
           <div className="mt-3">
             <div className="flex items-center justify-between text-xs mb-1">
