@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../App';
 import { api } from '../lib/api';
+import { isSupabaseConfigured, supabase } from '../lib/supabase';
+import { askBrain as staticAskBrain, fetchBrainDocuments as staticFetchDocs, uploadBrainDocument as staticUploadDoc, deleteBrainDocument as staticDeleteDoc, getReviewsDue as staticReviewsDue } from '../lib/brain';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
 import { Badge } from './ui/badge';
@@ -31,6 +33,7 @@ const newSessionId = () =>
 
 // Main company-brain panel: ask questions, commit actions, upload docs.
 export default function BrainSection({ compact }) {
+  const isWebStatic = typeof window !== 'undefined' && import.meta.env.VITE_TARGET === 'web';
   const { setCredits } = useAuth();
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
@@ -58,9 +61,9 @@ export default function BrainSection({ compact }) {
 
   // Fetch decision reviews that are due for closure.
   const loadReviews = useCallback(async () => {
+    if (isWebStatic) { try { const r = await staticReviewsDue(); setReviewsDue(r.due || []); } catch {} return; }
     try { const r = await api.get('/brain/reviews/due'); setReviewsDue(r.data.due || []); } catch (_e) { /* noop */ }
   }, []);
-  useEffect(() => { loadReviews(); }, [loadReviews]);
 
   // Record a real-world outcome for a committed decision.
   const submitReview = useCallback(async (id, outcome) => {
@@ -79,11 +82,16 @@ export default function BrainSection({ compact }) {
     finally { setReviewBusy(false); }
   }, [reviewBusy, reviewNote, reviewImpact, loadReviews]);
 
-  // Fetch uploaded documents and current brain settings.
+  // Fetch uploaded documents and current brain settings — static mode uses localStorage+Supabase
   const loadDocs = useCallback(async () => {
+    if (isWebStatic) { try { const r = await staticFetchDocs(); setDocs(r.docs); setCanTrain(r.can_train); } catch {} return; }
     try { const r = await api.get('/brain/documents'); setDocs(r.data.documents || []); setCanTrain(r.data.can_train !== false); } catch (_e) { /* noop */ }
   }, []);
-  useEffect(() => { loadDocs(); api.get('/brain/settings').then((r) => setInstructions(r.data.instructions || '')).catch(() => {}); }, [loadDocs]);
+  useEffect(() => {
+    loadDocs();
+    if (isWebStatic) return;
+    api.get('/brain/settings').then((r) => setInstructions(r.data.instructions || '')).catch(() => {});
+  }, [loadDocs]);
 
   useEffect(() => {
     const seed = sessionStorage.getItem('sdg_workspace_seed');
@@ -99,11 +107,22 @@ export default function BrainSection({ compact }) {
     return () => clearInterval(id);
   }, [docs, loadDocs]);
 
-  // Send a question to the brain and store its answer.
+  // Send a question — static (GH Pages free via brain.js + Supabase) or business-os
   const runAsk = useCallback(async (q, sid) => {
     if (!q.trim() || loading) return;
     setLoading(true);
     setResult(null); setShowResult(false); setResultInput(''); setDueAt(null); setKpiSent({});
+    if (isWebStatic) {
+      try {
+        const r = await staticAskBrain({ question: q.trim(), sessionId: sid });
+        setResult({ ...r, session_id: sid, decision_id: r.decisionId || sid, mode: r.mode, found_in_docs: r.found_in_docs });
+        setCommitted(null); setDecisionStatus(null);
+        setActionInput(r.next_action || '');
+        toast.success(r.offline ? 'Answered offline (add Supabase + HF key for live).' : 'Grounded answer ready.');
+      } catch (e) { toast.error(e?.message || 'Could not get an answer. Try again.'); }
+      finally { setLoading(false); }
+      return;
+    }
     try {
       const r = await api.post('/brain/ask', { question: q.trim(), session_id: sid });
       setResult(r.data);
@@ -122,28 +141,38 @@ export default function BrainSection({ compact }) {
     setQuestion(''); setResult(null); setSessionId(newSessionId()); setCommitted(null); setDecisionStatus(null);
   }, []);
 
-  // Upload a document for the brain to index.
+  // Upload — static via localStorage (+ Supabase bucket when available)
   const uploadFile = async (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
     if (f.size > 8 * 1024 * 1024) { toast.error('File too large (max 8 MB).'); return; }
     setUploading(true);
     try {
-      const fd = new FormData(); fd.append('file', f);
-      await api.post('/brain/documents', fd);
-      toast.success('Uploaded. Indexing may take a moment.');
-      loadDocs();
-    } catch (err) { toast.error(err?.response?.data?.detail || 'Upload failed.'); }
+      if (isWebStatic) {
+        const r = await staticUploadDoc(f);
+        toast.success(r.stored === 'local' || r.fallback === 'local' ? 'Saved locally (upload grounded answers next).' : 'Uploaded.');
+        loadDocs();
+      } else {
+        const fd = new FormData(); fd.append('file', f);
+        await api.post('/brain/documents', fd);
+        toast.success('Uploaded. Indexing may take a moment.');
+        loadDocs();
+      }
+    } catch (err) { toast.error(err?.message || err?.response?.data?.detail || 'Upload failed.'); }
     finally { setUploading(false); if (e.target) e.target.value = ''; }
   };
 
-  // Remove a previously uploaded document.
   const deleteDoc = async (docId) => {
+    if (isWebStatic) { try { await staticDeleteDoc(docId); loadDocs(); } catch { toast.error('Could not remove document.'); } return; }
     try { await api.delete(`/brain/documents/${docId}`); loadDocs(); } catch (_e) { toast.error('Could not remove document.'); }
   };
 
-  // Persist the custom company rules to the brain.
+  // Persist company rules — static saves to localStorage key
   const saveRules = async () => {
+    if (isWebStatic) {
+      try { localStorage.setItem('forge_brain_instructions', instructions); toast.success('Rules saved locally.'); setTrainOpen(false); } catch { toast.error('Could not save rules.'); }
+      setSavingRules(false); return;
+    }
     setSavingRules(true);
     try { await api.put('/brain/settings', { instructions }); toast.success('Company rules saved.'); setTrainOpen(false); } catch (_e) { toast.error('Could not save rules.'); }
     finally { setSavingRules(false); }
