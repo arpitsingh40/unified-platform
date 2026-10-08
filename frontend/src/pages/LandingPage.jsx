@@ -124,21 +124,29 @@ export default function LandingPage() {
             One conversation builds your company model. 12 autonomous agents run it. You steer.
           </p>
           <div className="mt-10 flex flex-col items-center gap-3">
-            <div className="flex items-center justify-center gap-4 flex-wrap">
-              <Button onClick={() => navigate('/auth')}
-                className="rounded-xl h-12 px-8 text-base font-medium bg-accent hover:bg-accent/90 text-white">
-                Start your company
-              </Button>
-              <Button onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })}
-                variant="outline" className="rounded-xl h-12 px-8 text-base">
-                See how it works
-              </Button>
-            </div>
-            {import.meta.env.VITE_TARGET === 'web' && (
-              <a href="https://github.com/anomalyco/unified-platform/releases" target="_blank" rel="noreferrer"
-                className="text-xs text-muted hover:text-accent underline underline-offset-4">
-                Download FORGE for Windows — execution runs locally, only LLM leaves your device
-              </a>
+            {import.meta.env.VITE_TARGET === 'web' ? (
+              <>
+                <a href="https://github.com/arpitsingh40/unified-platform/releases" target="_blank" rel="noreferrer"
+                  className="inline-flex items-center justify-center rounded-xl h-12 px-8 text-base font-medium bg-accent hover:bg-accent/90 text-white">
+                  Download FORGE for Windows
+                </a>
+                <p className="text-xs text-muted">Execution runs locally on your machine. Only LLM leaves your device.</p>
+                <Button onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })}
+                  variant="outline" className="rounded-xl h-10 px-6 text-sm">
+                  See how it works
+                </Button>
+              </>
+            ) : (
+              <div className="flex items-center justify-center gap-4 flex-wrap">
+                <Button onClick={() => navigate('/auth')}
+                  className="rounded-xl h-12 px-8 text-base font-medium bg-accent hover:bg-accent/90 text-white">
+                  Start your company
+                </Button>
+                <Button onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })}
+                  variant="outline" className="rounded-xl h-12 px-8 text-base">
+                  See how it works
+                </Button>
+              </div>
             )}
           </div>
         </div>

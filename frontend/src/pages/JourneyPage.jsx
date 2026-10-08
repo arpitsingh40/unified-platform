@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../App';
 import { api } from '../lib/api';
+import { supabase as sb } from '../lib/supabase';
 import { TopBar } from '../components/TopBar';
 import { SystemHealthBar, SystemHealthDetail, ConnectionPrompt, CapabilityPanel } from '../components/SystemHealth';
 import { SalaarBrief } from '../components/SalaarBrief';
@@ -116,20 +117,31 @@ export default function JourneyPage() {
   const [sessionId, setSessionId] = useState(null);
   const endRef = useRef(null);
 
-  // Load an in-progress journey
+  const isWeb = import.meta.env.VITE_TARGET === 'web' && !!sb;
+  // Load an in-progress journey — web: from Supabase (free), desktop/dev: from business-os
   const load = useCallback(async () => {
+    if (isWeb) {
+      try {
+        const { data: { user } } = await sb.auth.getUser();
+        if (!user) { setLoading(false); return; }
+        const { data: convs } = await sb.from('conversations').select('id, objective, updated_at').eq('user_id', user.id).order('updated_at', { ascending: false }).limit(1);
+        const conv = convs?.[0];
+        if (conv) {
+          const { data: msgs } = await sb.from('messages').select('role, content, created_at').eq('conversation_id', conv.id).order('id', { ascending: true });
+          setJourney({ started: true, session_id: conv.id, webConversationId: conv.id, messages: (msgs ?? []).map((m) => ({ role: m.role, text: m.content, at: m.created_at })), model: { objective: conv.objective } });
+          setSessionId(conv.id);
+        }
+      } catch (_e) { /* noop */ } finally { setLoading(false); }
+      return;
+    }
     try {
       const r = await api.get('/journey');
       if (r.data?.started) {
         setJourney(r.data);
         if (r.data.session_id) setSessionId(r.data.session_id);
       }
-    } catch (_e) {
-      /* noop */
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    } catch (_e) { /* noop */ } finally { setLoading(false); }
+  }, [isWeb]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -161,11 +173,26 @@ export default function JourneyPage() {
     }
   };
 
-  // Start a new journey from the objective
+  // Start a new journey — web: Edge Function `chat` (Supabase + DeepSeek, free), else business-os
   const start = useCallback(async () => {
     const obj = objective.trim();
     if (!obj || busy) return;
     setBusy(true);
+    if (isWeb) {
+      try {
+        // optimistic: show user message
+        setJourney((prev) => prev ? { ...prev, messages: [...(prev.messages ?? []), { role: 'user', text: obj, at: new Date().toISOString() }] } : { started: true, session_id: null, webConversationId: null, messages: [{ role: 'user', text: obj, at: new Date().toISOString() }], model: { objective: obj } });
+        setObjective('');
+        const { data, error } = await sb.functions.invoke('chat', { body: { message: obj, objective: obj, conversation_id: journey?.webConversationId ?? undefined } });
+        if (error) throw new Error(error.message || 'Edge Function error');
+        const reply = data?.reply ?? String(data?.data ?? '');
+        const convId = data?.conversation_id ?? journey?.webConversationId ?? null;
+        setJourney((prev) => ({ ...(prev ?? { started: true }), session_id: convId, webConversationId: convId, messages: [...(prev?.messages ?? [{ role: 'user', text: obj }]), { role: 'assistant', text: reply, at: new Date().toISOString() }], model: { objective: obj }, started: true }));
+        if (convId) setSessionId(convId);
+        setPanelOpen(true);
+      } catch (e) { handleError({ response: { status: 0, data: { detail: e?.message ?? 'Chat failed' } } }); } finally { setBusy(false); }
+      return;
+    }
     try {
       const r = await api.post('/journey/start', { objective: obj });
       setJourney((prev) => (prev ? { ...prev, ...r.data } : r.data));
@@ -173,15 +200,31 @@ export default function JourneyPage() {
       if (typeof r.data.credits === 'number') setCredits(r.data.credits);
       setPanelOpen(true);
     } catch (e) { handleError(e); } finally { setBusy(false); }
-  }, [objective, busy, setCredits]);
+  }, [objective, busy, setCredits, isWeb, journey?.webConversationId]);
 
-  // Send a chat or team message
+  // Send a chat — web: same Edge Function, else business-os
   const send = useCallback(async () => {
     const msg = message.trim();
     if (!msg || busy) return;
+    if (isWeb) {
+      setBusy(true);
+      setJourney((j) => (j ? { ...j, messages: [...j.messages, { role: 'user', text: msg, at: new Date().toISOString() }] } : j));
+      setMessage('');
+      try {
+        const { data, error } = await sb.functions.invoke('chat', { body: { message: msg, conversation_id: journey?.webConversationId ?? sessionId ?? undefined } });
+        if (error) throw new Error(error.message || 'Edge Function error');
+        const reply = data?.reply ?? '';
+        const convId = data?.conversation_id ?? journey?.webConversationId ?? null;
+        setJourney((prev) => ({ ...(prev ?? {}), webConversationId: convId, session_id: convId, messages: [...(prev?.messages ?? []), { role: 'assistant', text: reply, at: new Date().toISOString() }] }));
+        if (convId) setSessionId(convId);
+      } catch (e) {
+        handleError({ response: { status: 0, data: { detail: e?.message ?? 'Chat failed' } } });
+        setMessage(msg);
+      } finally { setBusy(false); }
+      return;
+    }
     const teamMode = journey?.team?.started && !journey?.team?.plan;
     setBusy(true);
-    // optimistic: show the user message immediately in the right stream
     if (teamMode) {
       setJourney((j) => (j ? { ...j, team: { ...j.team, messages: [...j.team.messages, { role: 'user', text: msg, at: null }] } } : j));
     } else {
@@ -196,10 +239,9 @@ export default function JourneyPage() {
     } catch (e) {
       handleError(e);
       setMessage(msg);
-      // resync clean state from server
       api.get('/journey').then((r) => r.data && setJourney(r.data)).catch(() => {});
     } finally { setBusy(false); }
-  }, [message, busy, journey, setCredits, sessionId]);
+  }, [message, busy, journey, setCredits, sessionId, isWeb]);
 
   // Submit on Ctrl/Cmd+Enter
   const onKey = (e, fn) => {

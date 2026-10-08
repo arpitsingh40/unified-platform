@@ -121,8 +121,13 @@ const App: FC = () => {
     setUser(usr);
   }, []);
 
-  const logout = useCallback(() => {
-    api.post('/auth/logout').catch(() => {});
+  const logout = useCallback(async () => {
+    const isWeb = import.meta.env.VITE_TARGET === 'web';
+    if (isWeb) {
+      try { const mod: unknown = await import('./lib/supabase'); const m = mod as { supabase: { auth: { signOut: () => Promise<void> } } | null }; await m.supabase?.auth.signOut(); } catch {}
+    } else {
+      api.post('/auth/logout').catch(() => {});
+    }
     setStoredToken(null);
     setUser(null);
   }, []);
@@ -132,8 +137,24 @@ const App: FC = () => {
   }, []);
 
   const isWebLandingEnv = import.meta.env.VITE_TARGET === 'web';
+  // Web (GH Pages free): use Supabase session if configured, otherwise demo (no auth required for landing)
   useEffect(() => {
-    if (isWebLandingEnv) { setChecking(false); return; }
+    if (isWebLandingEnv) {
+      (async () => {
+        try {
+          const mod = await import('./lib/supabase');
+          if (mod.isSupabaseConfigured && mod.supabase) {
+            const { data: { session } } = await mod.supabase.auth.getSession();
+            if (session?.user) {
+              const u = session.user;
+              setUser({ id: u.id, email: u.email ?? '', name: (u.user_metadata?.name as string) ?? (u.email ?? ''), credits: 0, is_admin: false, questionnaire_completed: false });
+            }
+          }
+        } catch {}
+        setChecking(false);
+      })();
+      return;
+    }
     let cancelled = false;
     const verify = () => {
       api.get<AppUser>('/auth/me').then((r) => {
@@ -206,8 +227,8 @@ const App: FC = () => {
           {!isWebLanding && user === null && !checking ? null : null}
           <Routes>
             <Route path="/" element={isWebLanding ? withErrorBoundary(LandingPage)({}) : (user ? <Navigate to="/app" replace /> : withErrorBoundary(LandingPage)({}))} />
-            <Route path="/auth" element={isWebLanding ? withErrorBoundary(LandingPage)({}) : (user ? <Navigate to="/app" replace /> : withErrorBoundary(AuthPage)({}))} />
-            <Route path="/app" element={user ? withErrorBoundary(JourneyPage)({}) : <Navigate to="/auth" replace />} />
+            <Route path="/auth" element={isWebLanding ? withErrorBoundary(AuthPage)({}) : (user ? <Navigate to="/app" replace /> : withErrorBoundary(AuthPage)({}))} />
+            <Route path="/app" element={isWebLanding ? withErrorBoundary(JourneyPage)({}) : (user ? withErrorBoundary(JourneyPage)({}) : <Navigate to="/auth" replace />)} />
             <Route path="/app/decisions" element={user ? withErrorBoundary(DecisionsPage)({}) : <Navigate to="/auth" replace />} />
             <Route path="/app/brain" element={user ? withErrorBoundary(BrainPage)({}) : <Navigate to="/auth" replace />} />
             <Route path="/app/brain/:decisionId" element={user ? withErrorBoundary(BrainPage)({}) : <Navigate to="/auth" replace />} />

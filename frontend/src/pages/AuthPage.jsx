@@ -8,6 +8,7 @@ import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
 import { toast } from 'sonner';
 import { api, setStoredToken } from '../lib/api';
+import { supabase as sb } from '../lib/supabase';
 import { useAuth } from '../App';
 
 // Render the app logo mark SVG
@@ -38,24 +39,50 @@ export default function AuthPage() {
   const [config, setConfig] = useState({ signup_credits: 100 });
   useEffect(() => { api.get('/config').then(r => setConfig(r.data)).catch(() => {}); }, []);
 
-  // Submit the signup or login form
+  const isWeb = import.meta.env.VITE_TARGET === 'web';
+  // Submit the signup or login form — web uses Supabase directly (free on GH Pages), desktop/dev uses business-os
   const submitEmail = async (e) => {
     e.preventDefault();
     if (busy) return;
     setBusy(true);
     try {
-      const path = emailMode === 'login' ? '/auth/login' : '/auth/signup';
-      const payload = emailMode === 'login'
-        ? { email, password }
-        : { email, password, name, ...(refCode ? { ref: refCode } : {}) };
-      const r = await api.post(path, payload);
-      if (r.data?.token) setStoredToken(r.data.token);
-      login(r.data.user);
-      if (r.data.user?.questionnaire_completed === false) {
-        try { window.trackPixel?.('Lead', {}); } catch (_) {}
+      if (isWeb && sb) {
+        if (emailMode === 'signup') {
+          const { data, error } = await sb.auth.signUp({ email, password, options: { data: { name } } });
+          if (error) throw new Error(error.message);
+          if (!data.user) throw new Error('No user returned.');
+          // Supabase email confirmation may be on — if session null, ask to check email
+          if (!data.session) {
+            toast.success('Check your email to confirm your account, then sign in.');
+            setEmailMode('login');
+            return;
+          }
+          login({ id: data.user.id, email: data.user.email, name: name || data.user.email, credits: 0, is_admin: false, questionnaire_completed: false });
+          toast.success('Welcome to FORGE.');
+        } else {
+          const { data, error } = await sb.auth.signInWithPassword({ email, password });
+          if (error) throw new Error(error.message);
+          const u = data.user;
+          login({ id: u.id, email: u.email, name: (u.user_metadata?.name || u.email), credits: 0, is_admin: false, questionnaire_completed: false });
+        }
+      } else if (isWeb && !sb) {
+        toast.error('Web auth is not configured yet. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY and redeploy, or download the Windows app.');
+        return;
+      } else {
+        const path = emailMode === 'login' ? '/auth/login' : '/auth/signup';
+        const payload = emailMode === 'login'
+          ? { email, password }
+          : { email, password, name, ...(refCode ? { ref: refCode } : {}) };
+        const r = await api.post(path, payload);
+        if (r.data?.token) setStoredToken(r.data.token);
+        login(r.data.user);
+        if (r.data.user?.questionnaire_completed === false) {
+          try { window.trackPixel?.('Lead', {}); } catch (_) {}
+        }
       }
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Something went wrong.');
+      const msg = err?.message || err?.response?.data?.detail || 'Something went wrong.';
+      toast.error(msg);
     } finally { setBusy(false); }
   };
 
